@@ -1,10 +1,9 @@
 # Copyright (C) 2022-2026 Intel Corporation.
 # SPDX-License-Identifier: MIT
-FROM ubuntu:resolute-20260421@sha256:f3d28607ddd78734bb7f71f117f3c6706c666b8b76cbff7c9ff6e5718d46ff64
+# Proxmox VE 9.x is built on Debian 13 (trixie); using debian:trixie as the base.
+FROM debian:trixie
 
-# TODO: bump to u26.04 packages once level-zero publishes them
-ARG L0_DEV_DEB_URL=https://github.com/oneapi-src/level-zero/releases/download/v1.28.2/level-zero-devel_1.28.2+u24.04_amd64.deb
-ARG L0_DEB_URL=https://github.com/oneapi-src/level-zero/releases/download/v1.28.2/level-zero_1.28.2+u24.04_amd64.deb
+ARG L0_SRC_URL=https://github.com/oneapi-src/level-zero/archive/refs/tags/v1.28.2.tar.gz
 ARG CMAKE_INSTALLER_URL=https://cmake.org/files/v3.20/cmake-3.20.0-linux-x86_64.sh
 ARG METEE_URL=https://github.com/intel/metee/archive/refs/tags/4.0.0.tar.gz
 ARG IGSC_URL=https://github.com/intel/igsc/archive/refs/tags/V0.9.5.tar.gz
@@ -14,7 +13,7 @@ ARG CARES_VERSION=cares-1_29_0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install --no-install-recommends -y autoconf automake build-essential ccache doxygen \
+RUN apt-get update && apt-get install --no-install-recommends -y autoconf automake build-essential ca-certificates ccache doxygen \
     dpkg-dev git gcc g++ libssl-dev libtool liblua5.2-0 libudev-dev pkg-config python3 python3-dev python3-pip wget && \
     apt-get remove -y libpciaccess-dev libpciaccess0 && \
     rm -rf /var/lib/apt/lists/*
@@ -26,17 +25,11 @@ RUN mkdir cmake && \
     ./cmake.sh --skip-license && \
     rm -f cmake.sh
 
-ENV PATH="/cmake/bin:${PATH}".
+ENV PATH="/cmake/bin:${PATH}"
 
 COPY builder/requirements.txt /tmp/requirements.txt
 
 RUN python3 -m pip --proxy=$http_proxy install --break-system-packages -r /tmp/requirements.txt
-
-RUN mkdir /work && cd /work && \
-    wget -q --no-check-certificate $L0_DEV_DEB_URL && \
-    wget -q --no-check-certificate $L0_DEB_URL &&\
-    dpkg -i *.deb && \
-    rm -fr /work
 
 RUN git clone --recurse-submodules --depth 1 -b $GRPC_VERSION https://github.com/grpc/grpc && \
     cd /grpc/third_party/zlib && \
@@ -54,6 +47,15 @@ RUN git clone --recurse-submodules --depth 1 -b $GRPC_VERSION https://github.com
       ../.. && \
     make -j4 && make install && \
     rm -fr /grpc
+
+RUN wget -qc --no-check-certificate $L0_SRC_URL -O - | tar -xz && \
+    cd /level-zero-* && \
+    mkdir build && \
+    cd build && \
+    cmake .. && \
+    make -j4 && \
+    make install && \
+    rm -fr /level-zero-*
 
 RUN wget -qc --no-check-certificate $METEE_URL -O - | tar -xz && \
     cd /metee-* && \
